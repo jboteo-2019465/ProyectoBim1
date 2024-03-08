@@ -71,8 +71,13 @@ export const registerAdmin = async (req, res) => {
 export const loginUser = async (req, res) => {
     try {
 
-        let { username, password } = req.body
-        let user = await User.findOne({ username })
+        let { usernameORemail, password } = req.body
+        let user = await User.findOne({ 
+            $or:[
+                {username: usernameORemail},
+                {email: usernameORemail}
+            ]
+        })
         // Verificar la contraseña
         let isPasswordValid = bcrypt.compare(password, password);
 

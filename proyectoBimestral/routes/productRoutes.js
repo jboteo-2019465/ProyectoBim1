@@ -1,5 +1,5 @@
 import express from 'express'
-import { crearCategoria, eliminarCategoria, getCategorys, obtenerCategoria, obtenerIndividualmente, updateCategory } from '../controller/productosController.js';
+import { agotados, crearCategoria, eliminarCategoria, getCategorys, obtenerCategoria, obtenerIndividualmente, updateCategory } from '../controller/productosController.js';
 import { validateJwt } from '../utils/validator.js'
 import { deleteProduct, obtenerProduct, registerProduct, testProduct, updateProduct } from '../controller/productosController.js';
 
@@ -13,6 +13,7 @@ api.delete('/deleteProduct/:id', validateJwt, deleteProduct)
 api.put('/updateProduct/:id', validateJwt, updateProduct)
 
 api.post('/obtenerIndividualmente', obtenerIndividualmente)
+api.get('/productosAgotados', agotados)
 
 //Categoria
 api.post('/obtenerCategoria', obtenerCategoria)
@@ -22,4 +23,4 @@ api.put('/updateCategory/:id', validateJwt, updateCategory)
 api.delete('/eliminarCategoria/:id', validateJwt, eliminarCategoria)
 
 
-export default api
+export default api 

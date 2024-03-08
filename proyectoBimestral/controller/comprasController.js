@@ -26,7 +26,7 @@ export const procesarPago = async (req, res) => {
         // Calcular el total de la compra
         let totalCompra = 0;
         for (let item of carrito.items) {
-            totalCompra += parseInt(item.price) * parseInt(item.quantity);
+            totalCompra += parseInt(item.price);
         }
         console.log(totalCompra)
 
@@ -51,7 +51,7 @@ export const procesarPago = async (req, res) => {
         await compra.save();
 
         // Limpiar el carrito del usuario
-        await Cart.updateOne({ user: id }, { $set: { items: [] } });
+        await Cart.updateOne({ user: id }, { $set: { items: [] } })
 
         return res.status(200).send({ message: 'Pago procesado exitosamente' });
     } catch (error) {
@@ -67,6 +67,7 @@ export const generarFactura = async (req, res) => {
         let token = req.headers.authorization;
         let decodeToken = jwt.verify(token, process.env.SECRET_KEY);
         let id = decodeToken.id;
+        let date = new Date().toLocaleDateString('en-US', { timeZone: 'UTC' })
 
         //Buscar la compra asociada al usuario
         let compra = await Compra.findOne({ user: id }).populate('user').populate('items.product')
@@ -80,30 +81,33 @@ export const generarFactura = async (req, res) => {
         doc.pipe(fs.createWriteStream(filePath));
 
         //Agregar contenido al PDF
-        doc.fontSize(14)
-        doc.text('Factura de la compra', { aling: 'center' });
+        doc.image('img/sat.png', { width: 100 })
+        doc.moveDown();
+        doc.font('Helvetica-Bold').fontSize(17).text(`----------- Factura No. ${compra._id} -----------`, { aling: 'center', bold: true });
         doc.moveDown();
 
-        doc.text(`Fecha: ${compra.fecha}`, { align: 'right' })
-        doc.text(`Usuario: ${compra.user.name}`, { align: 'left' })
+
+        doc.font('Helvetica').fontSize(14).text(`Fecha: ${date}`, { align: 'left' })
+        doc.text(`Cliente: ${compra.user.name}`, { align: 'left' })
         doc.moveDown();
 
-        doc.text('Products');
+        doc.font('Helvetica-Bold').fontSize(17).text('Products');
         doc.moveDown()
         compra.items.forEach((item, index) => {
-            doc.text(`${index + 1}, ${item.product.name} - Cantidad: ${item.quantity} - Precio Unitario: ${item.price}`)
+            doc.font('Helvetica').fontSize(14).text(`${index + 1}. ${item.product.name}      -      Cantidad: ${item.quantity}      -      Precio Unitario: Q${item.product.price}`)
         });
 
         doc.moveDown();
+        doc.font('Helvetica-Bold').text('--------------------------------------------------------------------')
 
-        doc.text(`Total a pagar: ${compra.total}`);
+        doc.text(`Total a pagar: Q${compra.total}`);
 
         //Cerrar el PDF
         doc.end();
 
         //Enviar el pdf como respuesta
         res.sendFile(filePath);
-        return res.send({message: 'Factura generada con exito'})
+        return res.send({ message: 'Factura generada con exito' })
 
     } catch (err) {
         console.error(err)
@@ -113,41 +117,41 @@ export const generarFactura = async (req, res) => {
 }
 
 //Actualizar compra/factura
-export const updateBuys = async(req, res)=>{
+export const updateBuys = async (req, res) => {
     try {
         //Obtener token
         let token = req.headers.authorization
         //Decodificar el token y obtener el id
         let decodeToken = jwt.verify(token, process.env.SECRET_KEY)
-        let id = decodeToken.id
         let role = decodeToken.role
-        let { idCompra } = req.params
+        let { id } = req.params
 
-        let compra = await Compra.findById(idCompra)
-        if(!compra){
+        let compra = await Compra.findById(id)
+        if (!compra) {
             return res.status(404).send({ message: 'Buy not found' })
         }
 
-        if(role == 'CLIENT'){
-            return res.status(404).send({ message: 'Not authorized' })
+        if (role === 'ADMIN') {
+
+            compra.user = req.body.user || compra.user;
+            compra.carrito = req.body.carrito || compra.carrito
+            compra.items.product = req.body.product || compra.items.product
+            compra.items.quantity = req.body.quantity || compra.items.quantity
+            compra.items.price = req.body.price || compra.items.price
+            compra.total = req.body.total || compra.total
+            compra.fecha = compra.fecha
+
+            await compra.save()
+            res.send({ message: 'Actualizado con exito' });
         }
-
-        //Actualizar datos
-        compra.user = req.body.user || compra.user;
-        compra.carrito = req.body.carrito || compra.carrito
-        compra.items.product = req.body.product || compra.items.product
-        compra.items.quantity = req.body.quantity || compra.items.quantity
-        compra.items.price = req.body.price || compra.items.price
-        compra.total = req.body.total || compra.total
-        compra.fecha = compra.fecha
-
-        await compra.save()
-        res.send({ message: 'Actualizado con exito' });
+        return res.status(404).send({ message: 'Unauthorized' })
 
 
-        
+
+
+
     } catch (err) {
         console.error(err)
-        
+
     }
 }

@@ -16,28 +16,31 @@ export const registerProduct = async (req, res) => {
         let decodeToken = jwt.verify(token, process.env.SECRET_KEY)
         let id = decodeToken.id
         let role = decodeToken.role
-        console.log(req.body)
-      
-        if (role === 'CLIENT') { return res.status(500).send({ message: 'Unauthorized role' }) }
 
-        let { name, description, stock, price, category } = req.body
+        if (role === 'ADMIN') {
+            let { name, description, stock, price, category } = req.body
 
-        //Verificar si la categoria existe
-        let existingCategory = await Category.findOne({ name: category });
-        if (!existingCategory) {
-            existingCategory = new Category({ name: category, description: `Category of ${category}` });
-            await existingCategory.save();
+            //Verificar si la categoria existe
+            let existingCategory = await Category.findOne({ name: category });
+            if (!existingCategory) {
+                existingCategory = new Category({ name: category, description: `Category of ${category}` });
+                await existingCategory.save();
+            }
+
+            //Verificar si el producto ya existe para aumentar el stock
+            let addStock = await Products.findOne({ name: name })
+            if (addStock) {
+                return res.status(404).send({ message: 'Product alredy exists' })
+            }
+
+            let product = new Products({ name, description, stock, price, category })
+            await product.save()
+            return res.send({ message: `Product added`, product })
+
         }
 
-        //Verificar si el producto ya existe para aumentar el stock
-        let addStock = await Products.findOne({ name: name })
-        if (addStock) {
-            return res.status(404).send({ message: 'Product alredy exists' })
-        }
 
-        let product = new Products({name, description, stock, price, category})
-        await product.save()
-        return res.send({ message: `Product added` })
+        return res.status(500).send({ message: 'Unauthorized role' })
     } catch (err) {
         console.error(err)
         return res.status(500).send({ message: 'Error registering product' })
@@ -58,7 +61,7 @@ export const obtenerProduct = async (req, res) => {
 export const obtenerIndividualmente = async (req, res) => {
     try {
         let { search } = req.body
-        let product = await Products.findOne({ name: search })
+        let product = await Products.findOne({ name: { $regex: search, $options: 'i' } })
         if (!product) {
             return res.status(404).send({ message: 'Product not found' })
         }
@@ -73,10 +76,10 @@ export const obtenerIndividualmente = async (req, res) => {
 export const getCategorys = async (req, res) => {
     try {
         let category = await Category.find()
-    return res.send({category})
+        return res.send({ category })
     } catch (error) {
         console.error(error)
-        return res.status(500).send({message: 'not found'})
+        return res.status(500).send({ message: 'not found' })
     }
 }
 
@@ -84,7 +87,7 @@ export const getCategorys = async (req, res) => {
 export const obtenerCategoria = async (req, res) => {
     try {
         let { search } = req.body
-        if(!search){return res.status(404).send({message: 'No data'})}
+        if (!search) { return res.status(404).send({ message: 'No data' }) }
         let product = await Products.findOne({ category: search })
         if (!product) {
             return res.status(404).send({ message: 'Product not found' })
@@ -96,6 +99,21 @@ export const obtenerCategoria = async (req, res) => {
     }
 }
 
+//Productos Agotados
+export const agotados = async (req, res) => {
+    try {
+        let products = await Products.find({ stock: 0 })
+        if (!products) {
+            return res.status(404).send({ message: 'out of stock products not found' })
+        }
+        return res.send({ products })
+    } catch (err) {
+        console.error(err)
+        return res.status(500).send({ message: 'Error getting products' })
+
+    }
+}
+
 
 export const updateProduct = async (req, res) => {
     try {
@@ -104,7 +122,7 @@ export const updateProduct = async (req, res) => {
         //Decodificar el token y obtener el id
         let decodeToken = jwt.verify(token, process.env.SECRET_KEY)
         let role = decodeToken.role
-        let { id }  = req.params
+        let { id } = req.params
         let { name } = req.body
         let product = await Products.findById(id);
         console.log(req.body.price)
@@ -112,25 +130,28 @@ export const updateProduct = async (req, res) => {
             return res.status(404).send({ message: 'Product width that Id not found' })
         }
         //Verificar ROl
-        if (role === 'CLIENT') { return res.status(404).send({ message: 'Unauthorized role' }) }
+        if (role === 'ADMIN') {
+            //Verificar si el producto ya esta agregado
+            let productExists = await Products.findOne({ name: name })
+            if (productExists) { return res.status(404).send({ message: 'Product name alredy Exists' }) }
 
-        //Verificar si el producto ya esta agregado
-        let productExists = await Products.findOne({ name: name })
-        if (productExists) { return res.status(404).send({ message: 'Product name alredy Exists' }) }
-
-        //Actualizar datos
-        product.name = req.body.name || product.name;
-        product.description = req.body.description || product.description
-        product.stock = req.body.stock || product.stock
-        product.price = req.body.price || product.price
-        let category = Category.findOne({name: product.category})
-        if (!category) {
-            category = new Category({ name: category, description: `Category of ${category}` });
-            await existingCategory.save();
+            //Actualizar datos
+            product.name = req.body.name || product.name;
+            product.description = req.body.description || product.description
+            product.stock = req.body.stock || product.stock
+            product.price = req.body.price || product.price
+            let category = Category.findOne({ name: product.category })
+            if (!category) {
+                category = new Category({ name: category, description: `Category of ${category}` });
+                await existingCategory.save();
+            }
+            product.category = req.body.category || product.category
+            await product.save()
+            return res.send({ message: 'Product updated' })
         }
-        product.category = req.body.category || product.category
-        await product.save()
-        return res.send({ message: 'Product updated' })
+
+
+        return res.status(404).send({ message: 'Unauthorized role' })
     } catch (err) {
         console.error(err)
         return res.status(500).send({ message: 'Error updating product' })
@@ -145,12 +166,13 @@ export const deleteProduct = async (req, res) => {
         let decodeToken = jwt.verify(token, process.env.SECRET_KEY)
         let role = decodeToken.role;
         console.log(role);
-        if (role === 'CLIENT') { return res.status(500).send({ message: 'Unauthorized role' }) }
-     
+        if (role === 'ADMIN') {
+            let deletedProduct = await Products.findOneAndDelete({ _id: id });
+            if (!deletedProduct) return res.status(404).send({ message: 'Product not found and not deleted' });
+            return res.send({ message: `Product with name ${deletedProduct.name} deleted successfully` });
+        }
 
-        let deletedProduct = await Products.findOneAndDelete({ _id: id });
-        if (!deletedProduct) return res.status(404).send({ message: 'Product not found and not deleted' });
-        return res.send({ message: `Product with name ${deletedProduct.name} deleted successfully` });
+        return res.status(500).send({ message: 'Unauthorized role' })
     } catch (err) {
         console.error(err);
         return res.status(500).send({ message: 'Error deleting product' });
@@ -158,64 +180,66 @@ export const deleteProduct = async (req, res) => {
 }
 
 //Crear categoria
-export const crearCategoria = async (req, res)=>{
+export const crearCategoria = async (req, res) => {
     try {
         let token = req.headers.authorization
         //Decodificar el token y obtener el id
         let decodeToken = jwt.verify(token, process.env.SECRET_KEY)
         let role = decodeToken.role
         let data = req.body
-        let {name} = req.body
+        let { name } = req.body
 
-        if(role === 'CLIENT'){
-            return res.status(404).send({message: 'Not authorized'})
+        if (role === 'ADMIN') {
+            let existingCategory = await Category.findOne({ name });
+            if (existingCategory) {
+                return res.status(404).send({ message: 'Category alredy exists' })
+            }
+
+            let category = new Category(data)
+            await category.save()
+            return res.send({ message: 'Category created' })
+
         }
 
-        let existingCategory = await Category.findOne( {name} );
-        if (existingCategory) {
-            return res.status(404).send({message: 'Category alredy exists'})
-        }
 
-        let category = new Category(data)
-        await category.save()
-        return res.send({message: 'Category created'})
+        return res.status(404).send({ message: 'Not authorized' })
 
     } catch (err) {
         console.error(err)
-        return res.status(500).send({message: 'Error creatung category'})
-        
+        return res.status(500).send({ message: 'Error creatung category' })
+
     }
 }
 
 //Actualizar categoria
-export const updateCategory = async(req, res)=>{
+export const updateCategory = async (req, res) => {
     try {
         let token = req.headers.authorization
         //Decodificar el token y obtener el id
         let decodeToken = jwt.verify(token, process.env.SECRET_KEY)
         let role = decodeToken.role
-        let{id} = req.params
+        let { id } = req.params
 
         let category = await Category.findById(id)
-        if(!category){
-            return res.status(404).send({message: 'Category not found'})
+        if (!category) {
+            return res.status(404).send({ message: 'Category not found' })
         }
 
-        if(role === 'CLIENT'){
-            return res.status(404).send({message: 'Not authorized'})
+        if (role === 'ADMIN') {
+            //Actualizar datos
+            category.name = req.body.name || category.name;
+            category.description = req.body.description || category.description;
+
+            await category.save()
+            res.send({ message: 'Category update' })
         }
 
-        //Actualizar datos
-        category.name = req.body.name || category.name;
-        category.description = req.body.description || category.description;
+        return res.status(404).send({ message: 'Not authorized' })
 
-        await category.save()
-        res.send({message: 'Category update'})
-        
     } catch (err) {
         console.error(err)
-        return res.status(500).send({message: 'Error updating category'})
-        
+        return res.status(500).send({ message: 'Error updating category' })
+
     }
 }
 
@@ -223,28 +247,32 @@ export const updateCategory = async(req, res)=>{
 export const eliminarCategoria = async (req, res) => {
     try {
         const categoriaId = req.params.id;
+        let token = req.headers.authorization
+        //Decodificar el token y obtener el id
+        let decodeToken = jwt.verify(token, process.env.SECRET_KEY)
+        let role = decodeToken.role
 
         // Verificar si la categoría existe
-        const categoria = await Category.findById(categoriaId);
+        let categoria = await Category.findByIdAndDelete({ _id: categoriaId });
         if (!categoria) {
             return res.status(404).send({ message: 'Categoría not found' });
         }
+        if (role === 'ADMIN') {
+            // Verificar si existen productos asociados a la categoría
+            const categoryDefault = await Category.findOne({ name: 'default' })
+            console.log(categoryDefault)
+            let updateCategoryProduct = await Products.updateMany(
+                { category: categoriaId },
+                { $set: { category: categoryDefault.name } }
 
-        // Verificar si existen productos asociados a la categoría
-        const productos = await Products.find({ category: categoriaId });
-        if (productos.length > 0) {
-            // Transferir los productos a una categoría predeterminada (si tienes una)
-            const categoriaPredeterminada = await Category.findOne({ name: 'CategoriaPredeterminada' });
-            console.log(categoriaPredeterminada)            
+            )
+            // Eliminar la categoría
+            return res.status(200).send({ message: 'Categoría eliminada exitosamente' });
 
-            // Transferir los productos a la categoría predeterminada
-            await Products.updateMany({ category: categoriaId }, { category: categoriaPredeterminada.name });
         }
 
-        // Eliminar la categoría
-        await Category.findByIdAndDelete(categoriaId);
 
-        return res.status(200).send({ message: 'Categoría eliminada exitosamente' });
+        return res.status(404).send({ message: 'Not authorized' })
     } catch (error) {
         console.error(error);
         return res.status(500).send({ message: 'Error al eliminar la categoría' });
